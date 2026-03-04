@@ -3,5 +3,5 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-# We use a simple dev server for testing
-CMD ["npm", "run", "dev", "--", "--host"]
+# Run Vite from inside its package so import('../dist/node/cli.js') resolves correctly
+CMD ["sh", "-c", "cd node_modules/vite && node bin/vite.js /app -c /app/vite.config.js --host"]
