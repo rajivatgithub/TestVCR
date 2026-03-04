@@ -7,8 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 app = FastAPI()
 
-# Track active rooms globally
+# Track active rooms and their participants (avoid relying on manager.rooms internal structure)
 active_rooms = set()
+room_participants = {}  # room_name -> set of sids
 
 # 2. Middleware
 app.add_middleware(
@@ -35,21 +36,38 @@ async def connect(sid, environ):
     # Send current room list to the new user
     await sio.emit("room_list_update", list(active_rooms), to=sid)
 
+@sio.on('get_room_list')
+async def handle_get_room_list(sid):
+    """Send current room list to a client that asked (e.g. after listener was attached)."""
+    await sio.emit("room_list_update", list(active_rooms), to=sid)
+
 @sio.on('join_room')
 async def handle_join_room(sid, data):
     room = data.get('room', 'default-room')
     username = data.get('username', 'Unknown')
     
-    # Register room and join
     active_rooms.add(room)
+    room_participants.setdefault(room, set()).add(sid)
     await sio.enter_room(sid, room)
     
-    # Notify everyone of the new room list
     await sio.emit("room_list_update", list(active_rooms))
     
     print(f"👤 {username} joined room: {room}")
-    # Notify ONLY users in that specific room
     await sio.emit("user_joined", {"username": username, "sid": sid}, room=room, skip_sid=sid)
+
+@sio.on('leave_room')
+async def handle_leave_room(sid, data):
+    """Remove client from room without disconnecting. Emit user_left and update room list."""
+    room = data.get('room')
+    if not room:
+        return
+    await sio.leave_room(sid, room)
+    room_participants.get(room, set()).discard(sid)
+    if not room_participants.get(room):
+        room_participants.pop(room, None)
+        active_rooms.discard(room)
+    await sio.emit("user_left", sid)
+    await sio.emit("room_list_update", list(active_rooms))
 
 @sio.event
 async def signal(sid, data):
@@ -69,16 +87,14 @@ async def signal_broadcast(sid, data):
 @sio.event
 async def disconnect(sid):
     print(f"❌ User Disconnected: {sid}")
-    await sio.emit("user_left", sid) 
-    # We iterate through a copy of active_rooms to check occupancy
-    for room in list(active_rooms):
-        # Get list of remaining users in that room
-        participants = sio.manager.rooms.get('/', {}).get(room, {})
-        if not participants or len(participants) == 0:
-            print(f"🏠 Room {room} is now empty. Deleting...")
+    await sio.emit("user_left", sid)
+    # Remove sid from our room_participants (sid may be in one room)
+    for room in list(room_participants.keys()):
+        room_participants[room].discard(sid)
+        if not room_participants[room]:
+            room_participants.pop(room, None)
             active_rooms.discard(room)
-    
-    # 3. Update the lobby list for everyone still in the lobby
+            print(f"🏠 Room {room} is now empty. Deleting...")
     await sio.emit("room_list_update", list(active_rooms))   
 
 # Unified Wrapper

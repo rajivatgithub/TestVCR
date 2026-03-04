@@ -49,9 +49,15 @@ const VideoRoom = () => {
   };
 
   // --- Socket Effects ---
+  // Listen for room list immediately so we don't miss the connect-time room_list_update
   useEffect(() => {
-    socket.on('room_list_update', (rooms) => setAvailableRooms(rooms));
-    
+    const onRoomList = (rooms) => setAvailableRooms(Array.isArray(rooms) ? rooms : []);
+    socket.on('room_list_update', onRoomList);
+    // If already connected, or when connect fires, request current list (covers listener race)
+    if (socket.connected) socket.emit('get_room_list');
+    const onConnect = () => socket.emit('get_room_list');
+    socket.on('connect', onConnect);
+
     socket.on('user_joined', async (data) => {
       if (!stream) return;
       console.log("New user joined, creating offer...");
@@ -91,7 +97,9 @@ const VideoRoom = () => {
     });
 
     return () => {
-      ['room_list_update', 'user_joined', 'signal', 'user_left'].forEach(e => socket.off(e));
+      socket.off('room_list_update', onRoomList);
+      socket.off('connect', onConnect);
+      ['user_joined', 'signal', 'user_left'].forEach(e => socket.off(e));
     };
   }, [stream]);
 
@@ -133,6 +141,25 @@ const VideoRoom = () => {
       track.enabled = newEnabledStatus;
       setIsVideoOff(!newEnabledStatus); // If track is disabled (false), VideoOff is true
     }
+  };
+
+  const leaveMeeting = () => {
+    const currentRoom = roomName;
+    if (currentRoom) {
+      socket.emit('leave_room', { room: currentRoom });
+    }
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    Object.values(pcs.current).forEach(pc => pc.close());
+    pcs.current = {};
+    setRemoteStreams({});
+    setJoined(false);
+    setRoomName('');
+    setIsMuted(false);
+    setIsVideoOff(false);
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
   };
   // --- Render ---
 
@@ -213,7 +240,7 @@ const VideoRoom = () => {
         </button>
 
         <button 
-          onClick={() => window.location.reload()} 
+          onClick={leaveMeeting} 
           style={{ padding: '12px 30px', borderRadius: '30px', border: 'none', background: '#ea4335', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>
           Leave Meeting
         </button>
