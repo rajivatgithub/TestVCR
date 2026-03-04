@@ -84,15 +84,17 @@ const VideoRoom = () => {
       }
     });
 
-    socket.on('user_left', (sid) => {
-      if (pcs.current[sid]) {
-        pcs.current[sid].close();
-        delete pcs.current[sid];
+    socket.on('user_left', (payload) => {
+      const leftSid = payload?.sid !== undefined ? payload.sid : payload;
+      const sidStr = String(leftSid);
+      if (pcs.current[sidStr]) {
+        pcs.current[sidStr].close();
+        delete pcs.current[sidStr];
       }
       setRemoteStreams(prev => {
-        const newState = { ...prev };
-        delete newState[sid];
-        return newState;
+        const next = { ...prev };
+        delete next[sidStr];
+        return next;
       });
     });
 
