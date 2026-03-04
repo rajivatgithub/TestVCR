@@ -61,12 +61,13 @@ async def handle_leave_room(sid, data):
     room = data.get('room')
     if not room:
         return
+    # Notify others in the room first (while we're still in the room), then leave
+    await sio.emit("user_left", sid, room=room, skip_sid=sid)
     await sio.leave_room(sid, room)
     room_participants.get(room, set()).discard(sid)
     if not room_participants.get(room):
         room_participants.pop(room, None)
         active_rooms.discard(room)
-    await sio.emit("user_left", sid)
     await sio.emit("room_list_update", list(active_rooms))
 
 @sio.event
