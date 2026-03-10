@@ -12,6 +12,12 @@ At a high level:
   - Shows a lobby of active rooms.
   - Lets a user create or join a room.
   - Manages local/remote media streams and WebRTC peer connections.
+- **limitations**
+  - Only two participants in a room. 
+    - Note: no code check is added yet, but a simple check in function `handle_join_room` should suffice.
+  - No explicit join functionality exist
+    - user can either crete a room or join a room, joining a room is equivalen to creating a connection
+    - both audio and video streams are allowed and user can disable either while maintinaing the connection.
 
 Everything can run locally via `docker-compose` (backend on port `8000`, frontend on port `5173`), or be deployed to Vercel using the provided `vercel.json`.
 
@@ -175,12 +181,12 @@ This is a **full-mesh** topology: every participant creates direct peer connecti
 - **Current model**:
   - Backend:
     - Single-process FastAPI + Socket.IO server with in-memory room tracking (`active_rooms` and `sio.manager.rooms`).
-    - Suited for a single instance (one container/VM) and modest traffic.
+    - Suited for a single instance (one container/VM) and modest (< 50) traffic.
   - WebRTC:
     - Full-mesh topology inside each room: every participant connects directly to every other participant.
 - **Implications**:
   - Horizontal scaling:
-    - Running multiple backend instances requires a shared state store (e.g., Redis) and a Socket.IO adapter so that events and room membership are consistent across instances.
+    - Running multiple backend instances requires a shared state store (e.g., Redis) and a Socket.IO adapter so that events and room membership are consistent across instances. [Note: thsi will add additional complexity]
     - In-memory-only state does not work across multiple instances or restarts.
   - Media scaling:
     - Full-mesh rooms scale poorly as participant count grows; bandwidth and CPU per client grow roughly with the number of peers.
